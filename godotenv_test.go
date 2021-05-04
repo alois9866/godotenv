@@ -2,9 +2,6 @@ package godotenv
 
 import (
 	"bytes"
-	"fmt"
-	"os"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -15,58 +12,6 @@ func parseAndCompare(t *testing.T, rawEnvLine string, expectedKey string, expect
 	key, value, _ := parseLine(rawEnvLine, noopPresets)
 	if key != expectedKey || value != expectedValue {
 		t.Errorf("Expected '%v' to parse as '%v' => '%v', got '%v' => '%v' instead", rawEnvLine, expectedKey, expectedValue, key, value)
-	}
-}
-
-func loadEnvAndCompareValues(t *testing.T, loader func(files ...string) error, envFileName string, expectedValues map[string]string, presets map[string]string) {
-	// first up, clear the env
-	os.Clearenv()
-
-	for k, v := range presets {
-		os.Setenv(k, v)
-	}
-
-	err := loader(envFileName)
-	if err != nil {
-		t.Fatalf("Error loading %v", envFileName)
-	}
-
-	for k := range expectedValues {
-		envValue := os.Getenv(k)
-		v := expectedValues[k]
-		if envValue != v {
-			t.Errorf("Mismatch for key '%v': expected '%v' got '%v'", k, v, envValue)
-		}
-	}
-}
-
-func TestLoadWithNoArgsLoadsDotEnv(t *testing.T) {
-	err := Load()
-	pathError := err.(*os.PathError)
-	if pathError == nil || pathError.Op != "open" || pathError.Path != ".env" {
-		t.Errorf("Didn't try and open .env by default")
-	}
-}
-
-func TestOverloadWithNoArgsOverloadsDotEnv(t *testing.T) {
-	err := Overload()
-	pathError := err.(*os.PathError)
-	if pathError == nil || pathError.Op != "open" || pathError.Path != ".env" {
-		t.Errorf("Didn't try and open .env by default")
-	}
-}
-
-func TestLoadFileNotFound(t *testing.T) {
-	err := Load("somefilethatwillneverexistever.env")
-	if err == nil {
-		t.Error("File wasn't found but Load didn't return an error")
-	}
-}
-
-func TestOverloadFileNotFound(t *testing.T) {
-	err := Overload("somefilethatwillneverexistever.env")
-	if err == nil {
-		t.Error("File wasn't found but Overload didn't return an error")
 	}
 }
 
@@ -99,7 +44,7 @@ func TestReadPlainEnv(t *testing.T) {
 }
 
 func TestParse(t *testing.T) {
-	envMap, err := Parse(bytes.NewReader([]byte("ONE=1\nTWO='2'\nTHREE = \"3\"")))
+	envMap, err := parse(bytes.NewReader([]byte("ONE=1\nTWO='2'\nTHREE = \"3\"")))
 	expectedValues := map[string]string{
 		"ONE":   "1",
 		"TWO":   "2",
@@ -113,98 +58,6 @@ func TestParse(t *testing.T) {
 			t.Errorf("expected %s to be %s, got %s", key, value, envMap[key])
 		}
 	}
-}
-
-func TestLoadDoesNotOverride(t *testing.T) {
-	envFileName := "fixtures/plain.env"
-
-	// ensure NO overload
-	presets := map[string]string{
-		"OPTION_A": "do_not_override",
-		"OPTION_B": "",
-	}
-
-	expectedValues := map[string]string{
-		"OPTION_A": "do_not_override",
-		"OPTION_B": "",
-	}
-	loadEnvAndCompareValues(t, Load, envFileName, expectedValues, presets)
-}
-
-func TestOveroadDoesOverride(t *testing.T) {
-	envFileName := "fixtures/plain.env"
-
-	// ensure NO overload
-	presets := map[string]string{
-		"OPTION_A": "do_not_override",
-	}
-
-	expectedValues := map[string]string{
-		"OPTION_A": "1",
-	}
-	loadEnvAndCompareValues(t, Overload, envFileName, expectedValues, presets)
-}
-
-func TestLoadPlainEnv(t *testing.T) {
-	envFileName := "fixtures/plain.env"
-	expectedValues := map[string]string{
-		"OPTION_A": "1",
-		"OPTION_B": "2",
-		"OPTION_C": "3",
-		"OPTION_D": "4",
-		"OPTION_E": "5",
-	}
-
-	loadEnvAndCompareValues(t, Load, envFileName, expectedValues, noopPresets)
-}
-
-func TestLoadExportedEnv(t *testing.T) {
-	envFileName := "fixtures/exported.env"
-	expectedValues := map[string]string{
-		"OPTION_A": "2",
-		"OPTION_B": "\\n",
-	}
-
-	loadEnvAndCompareValues(t, Load, envFileName, expectedValues, noopPresets)
-}
-
-func TestLoadEqualsEnv(t *testing.T) {
-	envFileName := "fixtures/equals.env"
-	expectedValues := map[string]string{
-		"OPTION_A": "postgres://localhost:5432/database?sslmode=disable",
-	}
-
-	loadEnvAndCompareValues(t, Load, envFileName, expectedValues, noopPresets)
-}
-
-func TestLoadQuotedEnv(t *testing.T) {
-	envFileName := "fixtures/quoted.env"
-	expectedValues := map[string]string{
-		"OPTION_A": "1",
-		"OPTION_B": "2",
-		"OPTION_C": "",
-		"OPTION_D": "\\n",
-		"OPTION_E": "1",
-		"OPTION_F": "2",
-		"OPTION_G": "",
-		"OPTION_H": "\n",
-		"OPTION_I": "echo 'asd'",
-	}
-
-	loadEnvAndCompareValues(t, Load, envFileName, expectedValues, noopPresets)
-}
-
-func TestSubstitutions(t *testing.T) {
-	envFileName := "fixtures/substitutions.env"
-	expectedValues := map[string]string{
-		"OPTION_A": "1",
-		"OPTION_B": "1",
-		"OPTION_C": "1",
-		"OPTION_D": "11",
-		"OPTION_E": "",
-	}
-
-	loadEnvAndCompareValues(t, Load, envFileName, expectedValues, noopPresets)
 }
 
 func TestExpanding(t *testing.T) {
@@ -257,7 +110,7 @@ func TestExpanding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			env, err := Parse(strings.NewReader(tt.input))
+			env, err := parse(strings.NewReader(tt.input))
 			if err != nil {
 				t.Errorf("Error: %s", err.Error())
 			}
@@ -269,16 +122,6 @@ func TestExpanding(t *testing.T) {
 		})
 	}
 
-}
-
-func TestActualEnvVarsAreLeftAlone(t *testing.T) {
-	os.Clearenv()
-	os.Setenv("OPTION_A", "actualenv")
-	_ = Load("fixtures/plain.env")
-
-	if os.Getenv("OPTION_A") != "actualenv" {
-		t.Error("An ENV var set earlier was overwritten")
-	}
 }
 
 func TestParsing(t *testing.T) {
@@ -325,11 +168,11 @@ func TestParsing(t *testing.T) {
 	// expect(env('FOO="bar\nbaz"')).to eql('FOO' => "bar\nbaz")
 	parseAndCompare(t, `FOO="bar\nbaz"`, "FOO", "bar\nbaz")
 
-	// it 'parses varibales with "." in the name' do
+	// it 'parses variables with "." in the name' do
 	// expect(env('FOO.BAR=foobar')).to eql('FOO.BAR' => 'foobar')
 	parseAndCompare(t, "FOO.BAR=foobar", "FOO.BAR", "foobar")
 
-	// it 'parses varibales with several "=" in the value' do
+	// it 'parses variables with several "=" in the value' do
 	// expect(env('FOO=foobar=')).to eql('FOO' => 'foobar=')
 	parseAndCompare(t, "FOO=foobar=", "FOO", "foobar=")
 
@@ -421,54 +264,5 @@ func TestErrorParsing(t *testing.T) {
 	envMap, err := Read(envFileName)
 	if err == nil {
 		t.Errorf("Expected error, got %v", envMap)
-	}
-}
-
-func TestWrite(t *testing.T) {
-	writeAndCompare := func(env string, expected string) {
-		envMap, _ := Unmarshal(env)
-		actual, _ := Marshal(envMap)
-		if expected != actual {
-			t.Errorf("Expected '%v' (%v) to write as '%v', got '%v' instead.", env, envMap, expected, actual)
-		}
-	}
-	//just test some single lines to show the general idea
-	//TestRoundtrip makes most of the good assertions
-
-	//values are always double-quoted
-	writeAndCompare(`key=value`, `key="value"`)
-	//double-quotes are escaped
-	writeAndCompare(`key=va"lu"e`, `key="va\"lu\"e"`)
-	//but single quotes are left alone
-	writeAndCompare(`key=va'lu'e`, `key="va'lu'e"`)
-	// newlines, backslashes, and some other special chars are escaped
-	writeAndCompare(`foo="\n\r\\r!"`, `foo="\n\r\\r\!"`)
-	// lines should be sorted
-	writeAndCompare("foo=bar\nbaz=buzz", "baz=\"buzz\"\nfoo=\"bar\"")
-	// integers should not be quoted
-	writeAndCompare(`key="10"`, `key=10`)
-
-}
-
-func TestRoundtrip(t *testing.T) {
-	fixtures := []string{"equals.env", "exported.env", "plain.env", "quoted.env"}
-	for _, fixture := range fixtures {
-		fixtureFilename := fmt.Sprintf("fixtures/%s", fixture)
-		env, err := readFile(fixtureFilename)
-		if err != nil {
-			t.Errorf("Expected '%s' to read without error (%v)", fixtureFilename, err)
-		}
-		rep, err := Marshal(env)
-		if err != nil {
-			t.Errorf("Expected '%s' to Marshal (%v)", fixtureFilename, err)
-		}
-		roundtripped, err := Unmarshal(rep)
-		if err != nil {
-			t.Errorf("Expected '%s' to Mashal and Unmarshal (%v)", fixtureFilename, err)
-		}
-		if !reflect.DeepEqual(env, roundtripped) {
-			t.Errorf("Expected '%s' to roundtrip as '%v', got '%v' instead", fixtureFilename, env, roundtripped)
-		}
-
 	}
 }
