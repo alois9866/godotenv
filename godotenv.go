@@ -10,16 +10,16 @@
 //
 // 		godotenv.Variables().Get()
 //
-// By default dotenv variables will take precedence over system variables.
-// If you want to use values from system environment over values from dotenv files, you can use this instead:
+// By default, dotenv variables will take precedence over system variables.
+// If you want to use values from system environment over values from dotenv files, you can use this:
 //
 //		godotenv.Variables().PrioritizeSystem().Get()
 //
-// If you want to check if some specific variables are available, you can call:
+// If you want to check that some specific variables are available, you can call:
 //
 //		godotenv.Variables("ENV_VAR1", "ENV_VAR2").Get()
 //
-// If you want to use files other then .env, you can do it too:
+// If you want to use files other than .env, you can do that too:
 //
 //		godotenv.Variables("ENV_VAR1", "ENV_VAR2").GetFrom("file1", "file2")
 //
