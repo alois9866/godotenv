@@ -2,6 +2,7 @@ package godotenv
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,296 @@ var noopPresets = make(map[string]string)
 func parseAndCompare(t *testing.T, rawEnvLine string, expectedKey string, expectedValue string) {
 	key, value, _ := parseLine(rawEnvLine, noopPresets)
 	if key != expectedKey || value != expectedValue {
-		t.Errorf("Expected '%v' to parse as '%v' => '%v', got '%v' => '%v' instead", rawEnvLine, expectedKey, expectedValue, key, value)
+		t.Errorf("Expected '%s' to parse as '%s' => '%s', got '%s' => '%s' instead.", rawEnvLine, expectedKey, expectedValue, key, value)
+	}
+}
+
+func TestGetAllFromFile(t *testing.T) {
+	envFileName := "fixtures/plain.env"
+	expectedValues := map[string]string{
+		"OPTION_A": "1",
+		"OPTION_B": "2",
+		"OPTION_C": "3",
+		"OPTION_D": "4",
+		"OPTION_E": "5",
+		"OPTION_F": "",
+		"OPTION_G": "",
+	}
+	var expectedVariables []string
+	for varName := range expectedValues {
+		expectedVariables = append(expectedVariables, varName)
+	}
+
+	envMap, notFoundVars := Variables(expectedVariables...).GetFrom(envFileName)
+	if len(notFoundVars) != 0 {
+		t.Errorf("Some of the variables were not found: %+v.", notFoundVars)
+	}
+
+	if len(envMap) != len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for key, value := range expectedValues {
+		if envMap[key] != value {
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
+		}
+	}
+}
+
+func TestGetSomeFromFile(t *testing.T) {
+	envFileName := "fixtures/plain.env"
+	expectedValues := map[string]string{
+		"OPTION_A": "1",
+		"OPTION_B": "2",
+		"OPTION_F": "",
+		"OPTION_G": "",
+	}
+	var expectedVariables []string
+	for varName := range expectedValues {
+		expectedVariables = append(expectedVariables, varName)
+	}
+
+	envMap, notFoundVars := Variables(expectedVariables...).GetFrom(envFileName)
+	if len(notFoundVars) != 0 {
+		t.Errorf("Some of the variables were not found: %+v.", notFoundVars)
+	}
+
+	if len(envMap) != len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for key, value := range expectedValues {
+		if envMap[key] != value {
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
+		}
+	}
+}
+
+func TestGetAllFromFileAndSomeFromOutside(t *testing.T) {
+	envFileName := "fixtures/plain.env"
+	expectedValues := map[string]string{
+		"OPTION_A": "1",
+		"OPTION_B": "2",
+		"OPTION_C": "3",
+		"OPTION_D": "4",
+		"OPTION_E": "5",
+		"OPTION_F": "",
+		"OPTION_G": "",
+		"OPTION_Z": "8",
+	}
+	var expectedVariables []string
+	for varName := range expectedValues {
+		expectedVariables = append(expectedVariables, varName)
+	}
+
+	err := os.Setenv("OPTION_Z", "8")
+	if err != nil {
+		t.Error("Unable to set env variables for test.")
+	}
+	defer os.Setenv("OPTION_Z", "")
+
+	envMap, notFoundVars := Variables(expectedVariables...).GetFrom(envFileName)
+	if len(notFoundVars) != 0 {
+		t.Errorf("Some of the variables were not found: %+v.", notFoundVars)
+	}
+
+	if len(envMap) != len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for key, value := range expectedValues {
+		if envMap[key] != value {
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
+		}
+	}
+}
+
+func TestGetAll(t *testing.T) {
+	envFileName := "fixtures/plain.env"
+	expectedValues := map[string]string{
+		"OPTION_A": "1",
+		"OPTION_B": "2",
+		"OPTION_C": "3",
+		"OPTION_D": "4",
+		"OPTION_E": "5",
+		"OPTION_F": "",
+		"OPTION_G": "",
+		"OPTION_Z": "8",
+	}
+	var expectedVariables []string
+	for varName := range expectedValues {
+		expectedVariables = append(expectedVariables, varName)
+	}
+
+	err := os.Setenv("OPTION_Z", "8")
+	if err != nil {
+		t.Error("Unable to set env variables for test.")
+	}
+	defer os.Setenv("OPTION_Z", "")
+
+	envMap, notFoundVars := Variables().GetFrom(envFileName)
+	if len(notFoundVars) != 0 {
+		t.Errorf("Some of the variables were not found: %+v.", notFoundVars)
+	}
+
+	if len(envMap) < len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for key, value := range expectedValues {
+		if envMap[key] != value {
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
+		}
+	}
+}
+
+func TestGetFail(t *testing.T) {
+	envFileName := "fixtures/plain.env"
+	expectedValues := map[string]string{
+		"OPTION_A":         "1",
+		"OPTION_B":         "2",
+		"OPTION_C":         "3",
+		"OPTION_D":         "4",
+		"OPTION_E":         "5",
+		"OPTION_F":         "",
+		"OPTION_G":         "",
+		"OPTION_Z":         "8",
+		"OPTION_NOT_FOUND": "NOT FOUND",
+	}
+	var expectedVariables []string
+	for varName := range expectedValues {
+		expectedVariables = append(expectedVariables, varName)
+	}
+	expectedToNotBeFound := []string{"OPTION_NOT_FOUND"}
+
+	err := os.Setenv("OPTION_Z", "8")
+	if err != nil {
+		t.Error("Unable to set env variables for test.")
+	}
+	defer os.Setenv("OPTION_Z", "")
+
+	envMap, notFoundVars := Variables(expectedVariables...).GetFrom(envFileName)
+	if len(notFoundVars) == 0 {
+		t.Error("Some variables should not have been found.")
+	}
+
+	if len(envMap) == len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for _, expected := range expectedToNotBeFound {
+		ok := false
+		for _, actual := range notFoundVars {
+			if expected == actual {
+				ok = true
+			}
+		}
+		if !ok {
+			t.Errorf("One of the variables were found when it should not be: %s.", expected)
+		}
+	}
+}
+
+func TestGetCollision(t *testing.T) {
+	envFileName := "fixtures/plain.env"
+	expectedValues := map[string]string{
+		"OPTION_A": "1",
+		"OPTION_B": "2",
+		"OPTION_C": "3",
+		"OPTION_D": "4",
+		"OPTION_E": "5",
+		"OPTION_F": "",
+		"OPTION_G": "",
+	}
+	var expectedVariables []string
+	for varName := range expectedValues {
+		expectedVariables = append(expectedVariables, varName)
+	}
+
+	err := os.Setenv("OPTION_A", "999")
+	if err != nil {
+		t.Error("Unable to set env variables for test.")
+	}
+	defer os.Setenv("OPTION_A", "")
+
+	envMap, notFoundVars := Variables(expectedVariables...).GetFrom(envFileName)
+	if len(notFoundVars) != 0 {
+		t.Errorf("Some of the variables were not found: %+v.", notFoundVars)
+	}
+
+	if len(envMap) != len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for key, value := range expectedValues {
+		if envMap[key] != value {
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
+		}
+	}
+}
+
+func TestGetCollisionSystemFirst(t *testing.T) {
+	envFileName := "fixtures/plain.env"
+	expectedValues := map[string]string{
+		"OPTION_A": "999",
+		"OPTION_B": "2",
+		"OPTION_C": "3",
+		"OPTION_D": "4",
+		"OPTION_E": "5",
+		"OPTION_F": "",
+		"OPTION_G": "",
+	}
+	var expectedVariables []string
+	for varName := range expectedValues {
+		expectedVariables = append(expectedVariables, varName)
+	}
+
+	err := os.Setenv("OPTION_A", "999")
+	if err != nil {
+		t.Error("Unable to set env variables for test.")
+	}
+	defer os.Setenv("OPTION_A", "")
+
+	envMap, notFoundVars := Variables(expectedVariables...).PrioritizeSystem().GetFrom(envFileName)
+	if len(notFoundVars) != 0 {
+		t.Errorf("Some of the variables were not found: %+v.", notFoundVars)
+	}
+
+	if len(envMap) != len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for key, value := range expectedValues {
+		if envMap[key] != value {
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
+		}
+	}
+}
+
+func TestGetDefaultEnv(t *testing.T) {
+	expectedValues := map[string]string{
+		"OPTION_A": "1",
+		"OPTION_B": "2",
+		"OPTION_C": "3",
+		"OPTION_D": "4",
+		"OPTION_E": "5",
+		"OPTION_F": "",
+		"OPTION_G": "",
+	}
+
+	envMap, err := Variables().Get()
+	if err != nil {
+		t.Error("Error reading file.")
+	}
+
+	if len(envMap) < len(expectedValues) {
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
+	}
+
+	for key, value := range expectedValues {
+		if envMap[key] != value {
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
+		}
 	}
 }
 
@@ -27,18 +317,18 @@ func TestReadPlainEnv(t *testing.T) {
 		"OPTION_G": "",
 	}
 
-	envMap, err := Read(envFileName)
+	envMap, err := read(envFileName)
 	if err != nil {
-		t.Error("Error reading file")
+		t.Error("Error reading file.")
 	}
 
 	if len(envMap) != len(expectedValues) {
-		t.Error("Didn't get the right size map back")
+		t.Errorf("Didn't get the right size map back: expected %d, got %d.", len(expectedValues), len(envMap))
 	}
 
 	for key, value := range expectedValues {
 		if envMap[key] != value {
-			t.Error("Read got one of the keys wrong")
+			t.Errorf("Read got one of the keys wrong: '%s' should be '%s', not '%s'.", key, value, envMap[key])
 		}
 	}
 }
@@ -51,7 +341,7 @@ func TestParse(t *testing.T) {
 		"THREE": "3",
 	}
 	if err != nil {
-		t.Fatalf("error parsing env: %v", err)
+		t.Fatalf("error parsing env: %v.", err)
 	}
 	for key, value := range expectedValues {
 		if envMap[key] != value {
@@ -112,7 +402,7 @@ func TestExpanding(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			env, err := parse(strings.NewReader(tt.input))
 			if err != nil {
-				t.Errorf("Error: %s", err.Error())
+				t.Errorf("Error: %s.", err.Error())
 			}
 			for k, v := range tt.expected {
 				if strings.Compare(env[k], v) != 0 {
@@ -199,6 +489,8 @@ func TestParsing(t *testing.T) {
 	//newlines and backslashes should be escaped
 	parseAndCompare(t, `FOO="bar\n\ b\az"`, "FOO", "bar\n baz")
 	parseAndCompare(t, `FOO="bar\\\n\ b\az"`, "FOO", "bar\\\n baz")
+	parseAndCompare(t, `FOO="bar\r\ b\az"`, "FOO", "bar\r baz")
+	parseAndCompare(t, `FOO="bar\n\r\ b\az"`, "FOO", "bar\n\r baz")
 	parseAndCompare(t, `FOO="bar\\r\ b\az"`, "FOO", "bar\\r baz")
 
 	parseAndCompare(t, `="value"`, "", "value")
@@ -215,7 +507,7 @@ func TestParsing(t *testing.T) {
 	badlyFormattedLine := "lol$wut"
 	_, _, err := parseLine(badlyFormattedLine, noopPresets)
 	if err == nil {
-		t.Errorf("Expected \"%v\" to return error, but it didn't", badlyFormattedLine)
+		t.Errorf("Expected \"%v\" to return error, but it didn't.", badlyFormattedLine)
 	}
 }
 
@@ -223,46 +515,46 @@ func TestLinesToIgnore(t *testing.T) {
 	// it 'ignores empty lines' do
 	// expect(env("\n \t  \nfoo=bar\n \nfizz=buzz")).to eql('foo' => 'bar', 'fizz' => 'buzz')
 	if !isIgnoredLine("\n") {
-		t.Error("Line with nothing but line break wasn't ignored")
+		t.Error("Line with nothing but line break wasn't ignored.")
 	}
 
 	if !isIgnoredLine("\r\n") {
-		t.Error("Line with nothing but windows-style line break wasn't ignored")
+		t.Error("Line with nothing but windows-style line break wasn't ignored.")
 	}
 
 	if !isIgnoredLine("\t\t ") {
-		t.Error("Line full of whitespace wasn't ignored")
+		t.Error("Line full of whitespace wasn't ignored.")
 	}
 
 	// it 'ignores comment lines' do
 	// expect(env("\n\n\n # HERE GOES FOO \nfoo=bar")).to eql('foo' => 'bar')
 	if !isIgnoredLine("# comment") {
-		t.Error("Comment wasn't ignored")
+		t.Error("Comment wasn't ignored.")
 	}
 
 	if !isIgnoredLine("\t#comment") {
-		t.Error("Indented comment wasn't ignored")
+		t.Error("Indented comment wasn't ignored.")
 	}
 
 	// make sure we're not getting false positives
 	if isIgnoredLine(`export OPTION_B='\n'`) {
-		t.Error("ignoring a perfectly valid line to parse")
+		t.Error("ignoring a perfectly valid line to parse.")
 	}
 }
 
 func TestErrorReadDirectory(t *testing.T) {
 	envFileName := "fixtures/"
-	envMap, err := Read(envFileName)
+	envMap, err := read(envFileName)
 
 	if err == nil {
-		t.Errorf("Expected error, got %v", envMap)
+		t.Errorf("Expected error, got %+v.", envMap)
 	}
 }
 
 func TestErrorParsing(t *testing.T) {
 	envFileName := "fixtures/invalid1.env"
-	envMap, err := Read(envFileName)
+	envMap, err := read(envFileName)
 	if err == nil {
-		t.Errorf("Expected error, got %v", envMap)
+		t.Errorf("Expected error, got %+v.", envMap)
 	}
 }

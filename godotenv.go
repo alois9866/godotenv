@@ -6,11 +6,23 @@
 //
 // 		SOME_ENV_VAR=somevalue
 //
-// and then in your go code you can call:
+// Then if you want to read all environment variables (from both the file and the system), you can call:
 //
-// 		godotenv.Read()
+// 		godotenv.Variables().Get()
 //
-// TODO
+// By default dotenv variables will take precedence over system variables.
+// If you want to use values from system environment over values from dotenv files, you can use this instead:
+//
+//		godotenv.Variables().PrioritizeSystem().Get()
+//
+// If you want to check if some specific variables are available, you can call:
+//
+//		godotenv.Variables("ENV_VAR1", "ENV_VAR2").Get()
+//
+// If you want to use files other then .env, you can do it too:
+//
+//		godotenv.Variables("ENV_VAR1", "ENV_VAR2").GetFrom("file1", "file2")
+//
 package godotenv
 
 import (
@@ -31,15 +43,79 @@ var (
 	expandVarRegex     = regexp.MustCompile(`(\\)?(\$)(\()?{?([A-Z0-9_]+)?}?`)
 )
 
-// Read will read your env file(s) and return them as a map.
+type variableHolder struct {
+	variables   []string
+	systemFirst bool
+}
+
+// Variables specifies the list of variables Get... functions should look for.
 //
-// If you call Read without any args it will default to reading .env in the current path.
+// If the list is empty, all variables will be acquired.
 //
-// You can otherwise tell it which files to read (there can be more than one) like:
+// It should be used in a combination with Get or GetFrom like:
 //
-//		godotenv.Read("fileone", "filetwo")
+//		Variables("ENV_VAR1", "ENV_VAR2").Get()
+//		Variables("ENV_VAR1", "ENV_VAR2").GetFrom("file1", "file2")
 //
-func Read(filenames ...string) (map[string]string, error) {
+//goland:noinspection GoExportedFuncWithUnexportedType // Should not be exported since it shouldn't be used on its own.
+func Variables(variables ...string) variableHolder {
+	return variableHolder{variables: variables}
+}
+
+// PrioritizeSystem orders to use variable's value from system environment, if it is present both there and in dotenv files.
+func (vh variableHolder) PrioritizeSystem() variableHolder {
+	vh.systemFirst = true
+	return vh
+}
+
+// Get returns a map of environment variables from the Variables list and a list of names of not found variables.
+//
+// It PrioritizeSystem was called, it will search for variables in the system environment first.
+// If a variable is not found there, Get will check .env in the current path.
+// If PrioritizeSystem was not called, it will be the other way around.
+func (vh variableHolder) Get() (envMap map[string]string, notFoundVariables []string) {
+	return vh.GetFrom()
+}
+
+// GetFrom returns a map of environment variables from the Variables list and a list of names of not found variables.
+//
+// It PrioritizeSystem was called, it will search for variables in the system environment first.
+// If a variable is not found there, GetFrom will check the specified files.
+// If PrioritizeSystem was not called, it will be the other way around.
+func (vh variableHolder) GetFrom(filenames ...string) (envMap map[string]string, notFoundVariables []string) {
+	inFileVariables, _ := read(filenames...)
+
+	if len(vh.variables) == 0 {
+		return vh.getAllVariables(inFileVariables), nil
+	}
+
+	envMap = make(map[string]string)
+
+	for _, variable := range vh.variables {
+		set := false
+		value := os.Getenv(variable)
+		if value != "" {
+			envMap[variable] = value
+			if vh.systemFirst {
+				continue
+			}
+			set = true
+		}
+
+		if value, ok := inFileVariables[variable]; ok {
+			envMap[variable] = value
+			continue
+		}
+
+		if !set {
+			notFoundVariables = append(notFoundVariables, variable)
+		}
+	}
+
+	return envMap, notFoundVariables
+}
+
+func read(filenames ...string) (map[string]string, error) {
 	envMap := make(map[string]string)
 
 	for _, filename := range filenamesOrDefault(filenames) {
@@ -101,10 +177,6 @@ func parse(r io.Reader) (map[string]string, error) {
 }
 
 func parseLine(line string, envMap map[string]string) (key string, value string, err error) {
-	if len(line) == 0 {
-		return "", "", errors.New("empty string")
-	}
-
 	line = removeComments(line)
 
 	firstEquals := strings.Index(line, "=")
@@ -120,8 +192,7 @@ func parseLine(line string, envMap map[string]string) (key string, value string,
 
 	key = exportRegex.ReplaceAllString(splitString[0], "$1")
 	value = parseValue(splitString[1], envMap)
-
-	return key, value, err
+	return key, value, nil
 }
 
 // Ditch the comments (but keep quoted hashes).
@@ -209,4 +280,31 @@ func expandVariables(str string, m map[string]string) string {
 func isIgnoredLine(line string) bool {
 	trimmedLine := strings.TrimSpace(line)
 	return len(trimmedLine) == 0 || strings.HasPrefix(trimmedLine, "#")
+}
+
+func (vh variableHolder) getAllVariables(fromEnvDotFiles map[string]string) map[string]string {
+	envMap := make(map[string]string)
+
+	for k, v := range fromEnvDotFiles {
+		envMap[k] = v
+	}
+
+	for k, v := range systemVariables() {
+		if _, ok := envMap[k]; ok && vh.systemFirst || !ok {
+			envMap[k] = v
+		}
+	}
+
+	return envMap
+}
+
+func systemVariables() map[string]string {
+	envMap := make(map[string]string)
+
+	for _, rawEnvLine := range os.Environ() {
+		keyValue := strings.SplitN(rawEnvLine, "=", 2)
+		envMap[keyValue[0]] = keyValue[1]
+	}
+
+	return envMap
 }
