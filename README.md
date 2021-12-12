@@ -34,7 +34,7 @@ import (
 )
 
 func main() {
-    env, _ := godotenv.Variables().Get()
+    env, _ := godotenv.Get()
 
     s3Bucket := env["S3_BUCKET"]
     secretKey := env["SECRET_KEY"]
@@ -47,20 +47,20 @@ func main() {
 Basically if you want to read all environment variables, you can call:
 
 ```go
-env, _ := godotenv.Variables().Get()
+env, _ := godotenv.Get()
 ````
 
 By default, dotenv variables will take precedence over system variables. If you want to use values from system
 environment over values from dotenv files, you can use this:
 
 ```go
-env, _ := godotenv.Variables().PrioritizeSystem().Get()
+env, _ := godotenv.Get(PrioritizeSystem())
 ````
 
 If you want to check that some specific variables are available, you can call:
 
 ```go
-env, notFound := godotenv.Variables("ENV_VAR1", "ENV_VAR2").Get()
+env, notFound := godotenv.Get(Variables("ENV_VAR1", "ENV_VAR2"))
 ```
 
 In this case, if some of those variables are not set, `notFound` will contain their names.
@@ -68,7 +68,7 @@ In this case, if some of those variables are not set, `notFound` will contain th
 If you want to use files other than `.env`, you can do that too:
 
 ```go
-env, notFound := godotenv.Variables("ENV_VAR1", "ENV_VAR2").GetFrom("file1", "file2")
+env, notFound := godotenv.Get(Variables("ENV_VAR1", "ENV_VAR2"), From("file1", "file2"))
 ```
 
 ### File formatting

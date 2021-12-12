@@ -8,20 +8,20 @@
 //
 // Then if you want to read all environment variables (from both the file and the system), you can call:
 //
-// 		godotenv.Variables().Get()
+// 		godotenv.Get()
 //
 // By default, dotenv variables will take precedence over system variables.
 // If you want to use values from system environment over values from dotenv files, you can use this:
 //
-//		godotenv.Variables().PrioritizeSystem().Get()
+//		godotenv.Get(PrioritizeSystem())
 //
 // If you want to check that some specific variables are available, you can call:
 //
-//		godotenv.Variables("ENV_VAR1", "ENV_VAR2").Get()
+//		godotenv.Get(Variables("ENV_VAR1", "ENV_VAR2"))
 //
 // If you want to use files other than .env, you can do that too:
 //
-//		godotenv.Variables("ENV_VAR1", "ENV_VAR2").GetFrom("file1", "file2")
+//		godotenv.Get(Variables("ENV_VAR1", "ENV_VAR2"), From("file1", "file2"))
 //
 package godotenv
 
@@ -43,60 +43,75 @@ var (
 	expandVarRegex     = regexp.MustCompile(`(\\)?(\$)(\()?{?([A-Z0-9_]+)?}?`)
 )
 
-type variableHolder struct {
+type config struct {
 	variables   []string
+	filenames   []string
 	systemFirst bool
 }
+
+type Option func(cfg *config)
 
 // Variables specifies the list of variables Get... functions should look for.
 //
 // If the list is empty, all variables will be acquired.
-//
-// It should be used in a combination with Get or GetFrom like:
-//
-//		Variables("ENV_VAR1", "ENV_VAR2").Get()
-//		Variables("ENV_VAR1", "ENV_VAR2").GetFrom("file1", "file2")
-//
-//goland:noinspection GoExportedFuncWithUnexportedType // Should not be exported since it shouldn't be used on its own.
-func Variables(variables ...string) variableHolder {
-	return variableHolder{variables: variables}
+func Variables(variables ...string) Option {
+	return func(cfg *config) {
+		cfg.variables = variables
+	}
 }
 
 // PrioritizeSystem orders to use variable's value from system environment, if it is present both there and in dotenv files.
-func (vh variableHolder) PrioritizeSystem() variableHolder {
-	vh.systemFirst = true
-	return vh
+func PrioritizeSystem() Option {
+	return func(cfg *config) {
+		cfg.systemFirst = true
+	}
 }
 
-// Get returns a map of environment variables from the Variables list and a list of names of not found variables.
+// From specifies which files or directories should be checked for environment variables.
 //
-// It PrioritizeSystem was called, it will search for variables in the system environment first.
-// If a variable is not found there, Get will check .env in the current path.
-// If PrioritizeSystem was not called, it will be the other way around.
-func (vh variableHolder) Get() (envMap map[string]string, notFoundVariables []string) {
-	return vh.GetFrom()
+// Without this option, the .env file is used by default.
+func From(filePaths ...string) Option {
+	return func(cfg *config) {
+		cfg.filenames = filePaths
+	}
 }
 
-// GetFrom returns a map of environment variables from the Variables list and a list of names of not found variables.
+// Get returns a map of found environment variables with their values and a list of not found variables.
 //
-// It PrioritizeSystem was called, it will search for variables in the system environment first.
-// If a variable is not found there, GetFrom will check the specified files.
-// If PrioritizeSystem was not called, it will be the other way around.
-func (vh variableHolder) GetFrom(filenames ...string) (envMap map[string]string, notFoundVariables []string) {
-	inFileVariables, _ := read(filenames...)
+// In order to modify its behavior, you can provide several options:
+//
+//		Variables option: to specify the list of variables to get.
+//		Default: all variables.
+//
+//		PrioritizeSystem option: to choose system variable's value, if a variable is present in both system environment and dotenv files.
+//		Default: dotenv overrides system.
+//
+//		From option: to get variables from specific files or directories.
+//		Default: from .env file.
+//
+func Get(options ...Option) (envMap map[string]string, notFoundVariables []string) {
+	cfg := config{}
+	for _, op := range options {
+		op(&cfg)
+	}
+	return get(cfg)
+}
 
-	if len(vh.variables) == 0 {
-		return vh.getAllVariables(inFileVariables), nil
+func get(cfg config) (envMap map[string]string, notFoundVariables []string) {
+	inFileVariables, _ := read(filenamesOrDefault(cfg.filenames))
+
+	if len(cfg.variables) == 0 {
+		return getAllVariables(inFileVariables, cfg.systemFirst), nil
 	}
 
 	envMap = make(map[string]string)
 
-	for _, variable := range vh.variables {
+	for _, variable := range cfg.variables {
 		set := false
 		value := os.Getenv(variable)
 		if value != "" {
 			envMap[variable] = value
-			if vh.systemFirst {
+			if cfg.systemFirst {
 				continue
 			}
 			set = true
@@ -115,10 +130,10 @@ func (vh variableHolder) GetFrom(filenames ...string) (envMap map[string]string,
 	return envMap, notFoundVariables
 }
 
-func read(filenames ...string) (map[string]string, error) {
+func read(filenames []string) (map[string]string, error) {
 	envMap := make(map[string]string)
 
-	for _, filename := range filenamesOrDefault(filenames) {
+	for _, filename := range filenames {
 		individualEnvMap, individualErr := readFile(filename)
 		if individualErr != nil {
 			return envMap, individualErr
@@ -282,7 +297,7 @@ func isIgnoredLine(line string) bool {
 	return len(trimmedLine) == 0 || strings.HasPrefix(trimmedLine, "#")
 }
 
-func (vh variableHolder) getAllVariables(fromEnvDotFiles map[string]string) map[string]string {
+func getAllVariables(fromEnvDotFiles map[string]string, systemFirst bool) map[string]string {
 	envMap := make(map[string]string)
 
 	for k, v := range fromEnvDotFiles {
@@ -290,7 +305,7 @@ func (vh variableHolder) getAllVariables(fromEnvDotFiles map[string]string) map[
 	}
 
 	for k, v := range systemVariables() {
-		if _, ok := envMap[k]; ok && vh.systemFirst || !ok {
+		if _, ok := envMap[k]; ok && systemFirst || !ok {
 			envMap[k] = v
 		}
 	}
